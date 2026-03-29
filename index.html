@@ -14,9 +14,9 @@
 
   <script>
     const STORAGE_KEYS = {
-      appointments: "elisa-planner-v4-appointments",
-      checklist: "elisa-planner-v4-checklist",
-      facilities: "elisa-planner-v4-facilities",
+      appointments: "elisa-planner-v5-appointments",
+      checklist: "elisa-planner-v5-checklist",
+      facilities: "elisa-planner-v5-facilities",
     };
 
     const defaultAppointments = [
@@ -154,16 +154,22 @@
       return weeks;
     }
 
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
     const state = {
       appointments: loadInitialArray(STORAGE_KEYS.appointments, defaultAppointments),
       checklist: loadInitialArray(STORAGE_KEYS.checklist, defaultChecklist),
       facilities: loadInitialArray(STORAGE_KEYS.facilities, defaultFacilities),
       selectedDate: toDateString(new Date()),
-      searchText: "",
-      monthFilter: "all",
-      facilityFilter: "all",
       currentMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12, 0, 0),
       activeTab: "today",
+      editingAppointmentId: null,
       form: {
         date: toDateString(new Date()),
         facilityId: "",
@@ -195,6 +201,25 @@
       localStorage.setItem(STORAGE_KEYS.appointments, JSON.stringify(state.appointments));
       localStorage.setItem(STORAGE_KEYS.checklist, JSON.stringify(state.checklist));
       localStorage.setItem(STORAGE_KEYS.facilities, JSON.stringify(state.facilities));
+    }
+
+    function resetForm() {
+      state.editingAppointmentId = null;
+      state.form = {
+        date: toDateString(new Date()),
+        facilityId: "",
+        facility: "",
+        location: "",
+        address: "",
+        phone: "",
+        start: "08:00",
+        end: "13:00",
+        notes: "",
+        compensation: "",
+        hourlyRate: "",
+        reminderDayBefore: true,
+        reminderOneHourBefore: true
+      };
     }
 
     function getFacilityPerformance() {
@@ -403,6 +428,9 @@
                         <div class="mt-3 text-sm font-medium text-slate-800">${item.start} – ${item.end} · ${formatDuration(item.start, item.end)}</div>
                         <div class="mt-1 text-sm text-slate-500">Tariffa oraria: ${formatCurrency(item.hourlyRate)}</div>
                         <div class="mt-1 text-sm text-slate-500">Totale turno: ${formatCurrency(computeAppointmentAmount(item))}</div>
+                        <div class="mt-3 flex gap-2">
+                          <button data-edit-id="${item.id}" class="edit-appointment rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200">Modifica</button>
+                        </div>
                       </div>`;
                   }).join("") : `<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun incarico su questa data.</div>`}
                 </div>
@@ -411,7 +439,10 @@
 
             ${state.activeTab === "add" ? `
             <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div class="mb-4"><h2 class="text-xl font-semibold text-slate-900">Aggiungi impegno</h2><p class="text-sm text-slate-500">Ora puoi inserire anche la tariffa oraria.</p></div>
+              <div class="mb-4">
+                <h2 class="text-xl font-semibold text-slate-900">${state.editingAppointmentId ? "Modifica impegno" : "Aggiungi impegno"}</h2>
+                <p class="text-sm text-slate-500">Ora puoi inserire anche la tariffa oraria.</p>
+              </div>
               <div class="space-y-3">
                 <input id="form-date" type="date" value="${state.form.date}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
                 <select id="form-facility-id" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none">
@@ -420,6 +451,7 @@
                 </select>
                 <input id="form-facility" value="${escapeHtml(state.form.facility)}" placeholder="Nome struttura" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
                 <input id="form-location" value="${escapeHtml(state.form.location)}" placeholder="Zona" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                <input id="form-address" value="${escapeHtml(state.form.address)}" placeholder="Indirizzo completo" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
                 <div class="grid grid-cols-2 gap-3">
                   <input id="form-start" type="time" value="${state.form.start}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
                   <input id="form-end" type="time" value="${state.form.end}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
@@ -430,7 +462,8 @@
                 </div>
                 <div class="text-xs text-slate-500">Se inserisci il compenso fisso, quello ha priorità. Se lo lasci vuoto, l'app calcola automaticamente ore × tariffa oraria.</div>
                 <textarea id="form-notes" placeholder="Note utili" rows="4" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none">${escapeHtml(state.form.notes)}</textarea>
-                <button id="save-appointment" class="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">Salva impegno</button>
+                <button id="save-appointment" class="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">${state.editingAppointmentId ? "Aggiorna impegno" : "Salva impegno"}</button>
+                ${state.editingAppointmentId ? '<button id="cancel-edit" class="w-full rounded-2xl bg-slate-200 px-5 py-4 text-base font-medium text-slate-700">Annulla modifica</button>' : ''}
               </div>
             </section>` : ""}
 
@@ -525,6 +558,7 @@
 
       const goAdd = document.getElementById("go-add");
       if (goAdd) goAdd.onclick = () => {
+        resetForm();
         state.activeTab = "add";
         render();
       };
@@ -553,6 +587,34 @@
           const id = Number(btn.dataset.deleteId);
           state.appointments = state.appointments.filter(item => item.id !== id);
           saveState();
+          render();
+        };
+      });
+
+      document.querySelectorAll(".edit-appointment").forEach(btn => {
+        btn.onclick = () => {
+          const id = Number(btn.dataset.editId);
+          const found = state.appointments.find(item => item.id === id);
+          if (!found) return;
+
+          state.editingAppointmentId = id;
+          state.form = {
+            date: found.date || toDateString(new Date()),
+            facilityId: found.facilityId || "",
+            facility: found.facility || "",
+            location: found.location || "",
+            address: found.address || "",
+            phone: found.phone || "",
+            start: found.start || "08:00",
+            end: found.end || "13:00",
+            notes: found.notes || "",
+            compensation: found.compensation === undefined || found.compensation === null ? "" : found.compensation,
+            hourlyRate: found.hourlyRate === undefined || found.hourlyRate === null ? "" : found.hourlyRate,
+            reminderDayBefore: !!found.reminderDayBefore,
+            reminderOneHourBefore: !!found.reminderOneHourBefore
+          };
+
+          state.activeTab = "add";
           render();
         };
       });
@@ -615,6 +677,7 @@
           ["form-date", "date"],
           ["form-facility", "facility"],
           ["form-location", "location"],
+          ["form-address", "address"],
           ["form-start", "start"],
           ["form-end", "end"],
           ["form-hourly-rate", "hourlyRate"],
@@ -653,22 +716,35 @@
               alert("Inserisci almeno data, struttura e zona.");
               return;
             }
-            const newAppointment = {
-              id: Date.now(),
+
+            const normalizedAppointment = {
+              id: state.editingAppointmentId || Date.now(),
               ...state.form,
               compensation: state.form.compensation === "" ? "" : Number(state.form.compensation) || 0,
               hourlyRate: state.form.hourlyRate === "" ? "" : Number(state.form.hourlyRate) || 0
             };
-            state.appointments.push(newAppointment);
+
+            if (state.editingAppointmentId) {
+              state.appointments = state.appointments.map(item =>
+                item.id === state.editingAppointmentId ? normalizedAppointment : item
+              );
+            } else {
+              state.appointments.push(normalizedAppointment);
+            }
+
             state.appointments.sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`));
             state.selectedDate = state.form.date;
             state.activeTab = "calendar";
-            state.form.start = "08:00";
-            state.form.end = "13:00";
-            state.form.notes = "";
-            state.form.compensation = "";
-            state.form.hourlyRate = "";
+            resetForm();
             saveState();
+            render();
+          };
+        }
+
+        const cancelEdit = document.getElementById("cancel-edit");
+        if (cancelEdit) {
+          cancelEdit.onclick = () => {
+            resetForm();
             render();
           };
         }
@@ -719,14 +795,6 @@
           };
         }
       }
-    }
-
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;");
     }
 
     render();
