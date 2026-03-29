@@ -1,569 +1,736 @@
-import React, { useEffect, useMemo, useState } from "react";
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Planner Elisa</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-100">
+  <div id="app"></div>
 
-const STORAGE_KEYS = {
-  appointments: "elisa-planner-v4-appointments",
-  checklist: "elisa-planner-v4-checklist",
-  facilities: "elisa-planner-v4-facilities",
-};
-
-const defaultAppointments = [
-  { id: 1, date: "2026-03-16", facilityId: "", facility: "Dott. Bandiera", location: "Dott. Bandiera", address: "", phone: "", start: "09:00", end: "13:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-  { id: 2, date: "2026-03-16", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "14:00", end: "17:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-  { id: 3, date: "2026-03-17", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "07:30", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-  { id: 4, date: "2026-03-18", facilityId: "", facility: "Dott. Bandiera", location: "Dott. Bandiera", address: "", phone: "", start: "14:00", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-  { id: 5, date: "2026-03-19", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "07:30", end: "12:30", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-  { id: 6, date: "2026-03-20", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "14:00", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
-];
-
-const defaultFacilities = [];
-
-const defaultChecklist = [
-  "Badge e documenti",
-  "Telefono carico",
-  "Caricatore / power bank",
-  "Acqua e snack",
-  "Materiale di lavoro",
-  "Controllo percorso su Maps",
-].map((label, index) => ({ id: index + 1, label, done: false }));
-
-const dailyMessages = [
-  "Buongiorno Elisa ❤️ Spero che oggi tutto sia semplice, leggero e sereno.",
-  "Un giorno alla volta, con calma e forza. Con amore, Danny ❤️",
-  "Che questa giornata ti porti ordine, energia e un sorriso in più.",
-  "Vai tranquilla amore mio, qui c’è tutto pronto per te ❤️",
-  "Anche oggi farai la differenza. Io faccio il tifo per te. — Danny",
-];
-
-const colorStyles = {
-  rose: "bg-rose-100 text-rose-700 ring-rose-200",
-  amber: "bg-amber-100 text-amber-700 ring-amber-200",
-  indigo: "bg-indigo-100 text-indigo-700 ring-indigo-200",
-  emerald: "bg-emerald-100 text-emerald-700 ring-emerald-200",
-  slate: "bg-slate-100 text-slate-700 ring-slate-200",
-};
-
-const tabs = ["today", "calendar", "add", "facilities", "summary"];
-
-function getMinutes(time: string) {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function getDurationHours(start: string, end: string) {
-  return Math.max(0, getMinutes(end) - getMinutes(start)) / 60;
-}
-
-function formatDuration(start: string, end: string) {
-  const diff = Math.max(0, getMinutes(end) - getMinutes(start));
-  const hours = Math.floor(diff / 60);
-  const minutes = diff % 60;
-  if (hours && minutes) return `${hours}h ${minutes}m`;
-  if (hours) return `${hours}h`;
-  return `${minutes}m`;
-}
-
-function formatCurrency(value: unknown) {
-  if (value === "" || value === null || value === undefined || Number.isNaN(Number(value))) return "—";
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 2,
-  }).format(Number(value) || 0);
-}
-
-function computeAppointmentAmount(item: any) {
-  if (item.compensation !== "" && item.compensation !== null && item.compensation !== undefined) {
-    return Number(item.compensation) || 0;
-  }
-  if (item.hourlyRate !== "" && item.hourlyRate !== null && item.hourlyRate !== undefined) {
-    return getDurationHours(item.start, item.end) * (Number(item.hourlyRate) || 0);
-  }
-  return 0;
-}
-
-function formatDateLabel(dateString: string) {
-  const date = new Date(`${dateString}T12:00:00`);
-  return date.toLocaleDateString("it-IT", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
-}
-
-function getMonthLabel(dateString: string) {
-  const date = new Date(`${dateString}T12:00:00`);
-  return date.toLocaleDateString("it-IT", {
-    month: "long",
-    year: "numeric",
-  });
-}
-
-function formatMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function toDateString(dateObj: Date) {
-  return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
-}
-
-function toLocalDateString(dateObj: Date) {
-  return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
-}
-
-function parseStored<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadInitialArray<T>(key: string, fallback: T[]): T[] {
-  const stored = parseStored<T[] | null>(key, null);
-  if (!Array.isArray(stored) || stored.length === 0) return fallback;
-  return stored;
-}
-
-function getMonthMatrix(currentMonthDate: Date) {
-  const firstDay = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1);
-  const startWeekDay = (firstDay.getDay() + 6) % 7;
-  const gridStart = new Date(firstDay);
-  gridStart.setDate(firstDay.getDate() - startWeekDay);
-  const days: Date[] = [];
-  for (let i = 0; i < 42; i += 1) {
-    const day = new Date(gridStart);
-    day.setDate(gridStart.getDate() + i);
-    days.push(day);
-  }
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
-  return weeks;
-}
-
-function MobileSection({ show, children }: { show: boolean; children: React.ReactNode }) {
-  if (!show) return null;
-  return <>{children}</>;
-}
-
-export default function ElisaPlannerApp() {
-  const now = new Date();
-  const [appointments, setAppointments] = useState<any[]>(defaultAppointments);
-  const [checklist, setChecklist] = useState<any[]>(defaultChecklist);
-  const [facilities, setFacilities] = useState<any[]>(defaultFacilities);
-  const [selectedDate, setSelectedDate] = useState(toDateString(now));
-  const [searchText, setSearchText] = useState("");
-  const [monthFilter, setMonthFilter] = useState("all");
-  const [facilityFilter, setFacilityFilter] = useState("all");
-  const [currentMonth, setCurrentMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0));
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState("today");
-  const [currentNow, setCurrentNow] = useState(new Date());
-
-  const [form, setForm] = useState({
-    date: toDateString(now),
-    facilityId: "",
-    facility: "",
-    location: "",
-    address: "",
-    phone: "",
-    start: "08:00",
-    end: "13:00",
-    notes: "",
-    compensation: "",
-    hourlyRate: "",
-    reminderDayBefore: true,
-    reminderOneHourBefore: true,
-  });
-
-  const [facilityForm, setFacilityForm] = useState({
-    name: "",
-    location: "",
-    address: "",
-    phone: "",
-    contactPerson: "",
-    averageTravelTime: "",
-    color: "rose",
-    notes: "",
-  });
-
-  useEffect(() => {
-    setAppointments(loadInitialArray(STORAGE_KEYS.appointments, defaultAppointments));
-    setChecklist(loadInitialArray(STORAGE_KEYS.checklist, defaultChecklist));
-    setFacilities(loadInitialArray(STORAGE_KEYS.facilities, defaultFacilities));
-    setMessageIndex(new Date().getDate() % dailyMessages.length);
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setCurrentNow(new Date()), 60000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.appointments, JSON.stringify(appointments));
-  }, [appointments]);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.checklist, JSON.stringify(checklist));
-  }, [checklist]);
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.facilities, JSON.stringify(facilities));
-  }, [facilities]);
-
-  const today = useMemo(() => toDateString(currentNow), [currentNow]);
-  const currentTimeLabel = useMemo(() => currentNow.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }), [currentNow]);
-
-  const appointmentMonths = useMemo(() => Array.from(new Set(appointments.map((item) => getMonthLabel(item.date)))), [appointments]);
-
-  const selectedDayAppointments = useMemo(() => appointments.filter((item) => item.date === selectedDate).sort((a, b) => getMinutes(a.start) - getMinutes(b.start)), [appointments, selectedDate]);
-  const todayAppointments = useMemo(() => appointments.filter((item) => item.date === today).sort((a, b) => getMinutes(a.start) - getMinutes(b.start)), [appointments, today]);
-
-  const nextAppointment = useMemo(() => {
-    const nowKey = `${today} ${String(currentNow.getHours()).padStart(2, "0")}:${String(currentNow.getMinutes()).padStart(2, "0")}`;
-    return appointments
-      .filter((item) => `${item.date} ${item.start}` >= nowKey)
-      .sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`))[0];
-  }, [appointments, today, currentNow]);
-
-  const globalStats = useMemo(() => {
-    const totalMinutes = appointments.reduce((acc, item) => acc + Math.max(0, getMinutes(item.end) - getMinutes(item.start)), 0);
-    const totalCompensation = appointments.reduce((acc, item) => acc + computeAppointmentAmount(item), 0);
-    return {
-      days: appointments.length,
-      hours: (totalMinutes / 60).toFixed(totalMinutes % 60 === 0 ? 0 : 1),
-      compensation: totalCompensation,
-      facilities: new Set(appointments.map((item) => item.facility)).size,
+  <script>
+    const STORAGE_KEYS = {
+      appointments: "elisa-planner-v4-appointments",
+      checklist: "elisa-planner-v4-checklist",
+      facilities: "elisa-planner-v4-facilities",
     };
-  }, [appointments]);
 
-  const currentMonthAppointments = useMemo(() => {
-    const currentKey = formatMonthKey(currentMonth);
-    return appointments.filter((item) => item.date.slice(0, 7) === currentKey);
-  }, [appointments, currentMonth]);
+    const defaultAppointments = [
+      { id: 1, date: "2026-03-16", facilityId: "", facility: "Dott. Bandiera", location: "Dott. Bandiera", address: "", phone: "", start: "09:00", end: "13:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
+      { id: 2, date: "2026-03-16", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "14:00", end: "17:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
+      { id: 3, date: "2026-03-17", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "07:30", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
+      { id: 4, date: "2026-03-18", facilityId: "", facility: "Dott. Bandiera", location: "Dott. Bandiera", address: "", phone: "", start: "14:00", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
+      { id: 5, date: "2026-03-19", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "07:30", end: "12:30", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true },
+      { id: 6, date: "2026-03-20", facilityId: "", facility: "Aster", location: "Aster", address: "", phone: "", start: "14:00", end: "18:00", notes: "", compensation: "", hourlyRate: "", reminderDayBefore: true, reminderOneHourBefore: true }
+    ];
 
-  const calendarWeeks = useMemo(() => getMonthMatrix(currentMonth), [currentMonth]);
+    const defaultFacilities = [];
 
-  const facilityPerformance = useMemo(() => {
-    const facilityNames = Array.from(new Set([
-      ...facilities.map((facility) => facility.name),
-      ...appointments.map((item) => item.facility).filter(Boolean),
-    ]));
+    const defaultChecklist = [
+      "Badge e documenti",
+      "Telefono carico",
+      "Caricatore / power bank",
+      "Acqua e snack",
+      "Materiale di lavoro",
+      "Controllo percorso su Maps"
+    ].map((label, index) => ({ id: index + 1, label, done: false }));
 
-    return facilityNames.map((facilityName) => {
-      const facilityData = facilities.find((facility) => facility.name === facilityName) || {};
-      const related = appointments.filter((item) => item.facility === facilityName);
-      const totalMinutes = related.reduce((acc, item) => acc + Math.max(0, getMinutes(item.end) - getMinutes(item.start)), 0);
-      const totalCompensation = related.reduce((acc, item) => acc + computeAppointmentAmount(item), 0);
-      const hourlyItems = related.filter((item) => item.hourlyRate !== "" && item.hourlyRate !== null && item.hourlyRate !== undefined);
-      return {
-        id: facilityData.id || facilityName,
-        name: facilityName,
-        location: facilityData.location || "",
-        address: facilityData.address || "",
-        phone: facilityData.phone || "",
-        color: facilityData.color || "slate",
-        count: related.length,
-        hoursValue: totalMinutes / 60,
+    const dailyMessages = [
+      "Buongiorno Elisa ❤️ Spero che oggi tutto sia semplice, leggero e sereno.",
+      "Un giorno alla volta, con calma e forza. Con amore, Danny ❤️",
+      "Che questa giornata ti porti ordine, energia e un sorriso in più.",
+      "Vai tranquilla amore mio, qui c’è tutto pronto per te ❤️",
+      "Anche oggi farai la differenza. Io faccio il tifo per te. — Danny"
+    ];
+
+    const colorStyles = {
+      rose: "bg-rose-100 text-rose-700 ring-rose-200",
+      amber: "bg-amber-100 text-amber-700 ring-amber-200",
+      indigo: "bg-indigo-100 text-indigo-700 ring-indigo-200",
+      emerald: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+      slate: "bg-slate-100 text-slate-700 ring-slate-200"
+    };
+
+    const tabs = ["today", "calendar", "add", "facilities", "summary"];
+
+    function getMinutes(time) {
+      const [hours, minutes] = time.split(":").map(Number);
+      return hours * 60 + minutes;
+    }
+
+    function getDurationHours(start, end) {
+      return Math.max(0, getMinutes(end) - getMinutes(start)) / 60;
+    }
+
+    function formatDuration(start, end) {
+      const diff = Math.max(0, getMinutes(end) - getMinutes(start));
+      const hours = Math.floor(diff / 60);
+      const minutes = diff % 60;
+      if (hours && minutes) return `${hours}h ${minutes}m`;
+      if (hours) return `${hours}h`;
+      return `${minutes}m`;
+    }
+
+    function formatCurrency(value) {
+      if (value === "" || value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+      return new Intl.NumberFormat("it-IT", {
+        style: "currency",
+        currency: "EUR",
+        maximumFractionDigits: 2
+      }).format(Number(value) || 0);
+    }
+
+    function computeAppointmentAmount(item) {
+      if (item.compensation !== "" && item.compensation !== null && item.compensation !== undefined) {
+        return Number(item.compensation) || 0;
+      }
+      if (item.hourlyRate !== "" && item.hourlyRate !== null && item.hourlyRate !== undefined) {
+        return getDurationHours(item.start, item.end) * (Number(item.hourlyRate) || 0);
+      }
+      return 0;
+    }
+
+    function formatDateLabel(dateString) {
+      const date = new Date(`${dateString}T12:00:00`);
+      return date.toLocaleDateString("it-IT", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long"
+      });
+    }
+
+    function getMonthLabel(dateString) {
+      const date = new Date(`${dateString}T12:00:00`);
+      return date.toLocaleDateString("it-IT", {
+        month: "long",
+        year: "numeric"
+      });
+    }
+
+    function formatMonthKey(date) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    }
+
+    function toDateString(dateObj) {
+      return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
+    }
+
+    function toLocalDateString(dateObj) {
+      return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, "0")}-${String(dateObj.getDate()).padStart(2, "0")}`;
+    }
+
+    function parseStored(key, fallback) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function loadInitialArray(key, fallback) {
+      const stored = parseStored(key, null);
+      if (!Array.isArray(stored) || stored.length === 0) return fallback;
+      return stored;
+    }
+
+    function getMonthMatrix(currentMonthDate) {
+      const firstDay = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1);
+      const startWeekDay = (firstDay.getDay() + 6) % 7;
+      const gridStart = new Date(firstDay);
+      gridStart.setDate(firstDay.getDate() - startWeekDay);
+      const days = [];
+      for (let i = 0; i < 42; i += 1) {
+        const day = new Date(gridStart);
+        day.setDate(gridStart.getDate() + i);
+        days.push(day);
+      }
+      const weeks = [];
+      for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+      return weeks;
+    }
+
+    const state = {
+      appointments: loadInitialArray(STORAGE_KEYS.appointments, defaultAppointments),
+      checklist: loadInitialArray(STORAGE_KEYS.checklist, defaultChecklist),
+      facilities: loadInitialArray(STORAGE_KEYS.facilities, defaultFacilities),
+      selectedDate: toDateString(new Date()),
+      searchText: "",
+      monthFilter: "all",
+      facilityFilter: "all",
+      currentMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12, 0, 0),
+      activeTab: "today",
+      form: {
+        date: toDateString(new Date()),
+        facilityId: "",
+        facility: "",
+        location: "",
+        address: "",
+        phone: "",
+        start: "08:00",
+        end: "13:00",
+        notes: "",
+        compensation: "",
+        hourlyRate: "",
+        reminderDayBefore: true,
+        reminderOneHourBefore: true
+      },
+      facilityForm: {
+        name: "",
+        location: "",
+        address: "",
+        phone: "",
+        contactPerson: "",
+        averageTravelTime: "",
+        color: "rose",
+        notes: ""
+      }
+    };
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEYS.appointments, JSON.stringify(state.appointments));
+      localStorage.setItem(STORAGE_KEYS.checklist, JSON.stringify(state.checklist));
+      localStorage.setItem(STORAGE_KEYS.facilities, JSON.stringify(state.facilities));
+    }
+
+    function getFacilityPerformance() {
+      const facilityNames = Array.from(new Set([
+        ...state.facilities.map(f => f.name),
+        ...state.appointments.map(a => a.facility).filter(Boolean)
+      ]));
+
+      return facilityNames.map((facilityName) => {
+        const facilityData = state.facilities.find(f => f.name === facilityName) || {};
+        const related = state.appointments.filter(a => a.facility === facilityName);
+        const totalMinutes = related.reduce((acc, item) => acc + Math.max(0, getMinutes(item.end) - getMinutes(item.start)), 0);
+        const totalCompensation = related.reduce((acc, item) => acc + computeAppointmentAmount(item), 0);
+        const hourlyItems = related.filter(item => item.hourlyRate !== "" && item.hourlyRate !== null && item.hourlyRate !== undefined);
+
+        return {
+          id: facilityData.id || facilityName,
+          name: facilityName,
+          location: facilityData.location || "",
+          address: facilityData.address || "",
+          phone: facilityData.phone || "",
+          color: facilityData.color || "slate",
+          count: related.length,
+          hours: (totalMinutes / 60).toFixed(totalMinutes % 60 === 0 ? 0 : 1),
+          totalCompensation,
+          avgHourlyRate: hourlyItems.length
+            ? hourlyItems.reduce((acc, item) => acc + (Number(item.hourlyRate) || 0), 0) / hourlyItems.length
+            : 0
+        };
+      }).sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    function getCurrentMonthAppointments() {
+      const currentKey = formatMonthKey(state.currentMonth);
+      return state.appointments.filter(item => item.date.slice(0, 7) === currentKey);
+    }
+
+    function render() {
+      const app = document.getElementById("app");
+      const now = new Date();
+      const today = toDateString(now);
+      const currentTimeLabel = now.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+      const selectedDayAppointments = state.appointments
+        .filter(item => item.date === state.selectedDate)
+        .sort((a, b) => getMinutes(a.start) - getMinutes(b.start));
+
+      const todayAppointments = state.appointments
+        .filter(item => item.date === today)
+        .sort((a, b) => getMinutes(a.start) - getMinutes(b.start));
+
+      const nowKey = `${today} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const nextAppointment = state.appointments
+        .filter(item => `${item.date} ${item.start}` >= nowKey)
+        .sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`))[0];
+
+      const totalMinutes = state.appointments.reduce((acc, item) => acc + Math.max(0, getMinutes(item.end) - getMinutes(item.start)), 0);
+      const globalComp = state.appointments.reduce((acc, item) => acc + computeAppointmentAmount(item), 0);
+      const globalStats = {
+        days: state.appointments.length,
         hours: (totalMinutes / 60).toFixed(totalMinutes % 60 === 0 ? 0 : 1),
-        totalCompensation,
-        avgHourlyRate: hourlyItems.length ? hourlyItems.reduce((acc, item) => acc + (Number(item.hourlyRate) || 0), 0) / hourlyItems.length : 0,
+        compensation: globalComp,
+        facilities: new Set(state.appointments.map(item => item.facility)).size
       };
-    }).sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return a.name.localeCompare(b.name);
-    });
-  }, [appointments, facilities]);
 
-  const monthStats = useMemo(() => {
-    const grouped = currentMonthAppointments.reduce((acc, item) => {
-      const month = getMonthLabel(item.date);
-      if (!acc[month]) acc[month] = [];
-      acc[month].push(item);
-      return acc;
-    }, {} as Record<string, any[]>);
-    return Object.entries(grouped).map(([month, items]) => ({
-      month,
-      count: items.length,
-      totalHours: items.reduce((acc, item) => acc + getDurationHours(item.start, item.end), 0).toFixed(1),
-      totalCompensation: items.reduce((acc, item) => acc + computeAppointmentAmount(item), 0),
-    }));
-  }, [currentMonthAppointments]);
+      const facilityPerformance = getFacilityPerformance();
+      const currentMonthAppointments = getCurrentMonthAppointments();
 
-  const addFacility = () => {
-    if (!facilityForm.name.trim() || !facilityForm.address.trim()) return;
-    const newFacility = { id: Date.now(), ...facilityForm };
-    setFacilities((current) => [...current, newFacility]);
-    setForm((current) => ({
-      ...current,
-      facilityId: String(newFacility.id),
-      facility: newFacility.name,
-      location: newFacility.location,
-      address: newFacility.address,
-      phone: newFacility.phone,
-      notes: current.notes || newFacility.notes || "",
-    }));
-    setFacilityForm({ name: "", location: "", address: "", phone: "", contactPerson: "", averageTravelTime: "", color: "rose", notes: "" });
-  };
+      const groupedMonthStats = currentMonthAppointments.reduce((acc, item) => {
+        const month = getMonthLabel(item.date);
+        if (!acc[month]) acc[month] = [];
+        acc[month].push(item);
+        return acc;
+      }, {});
 
-  const applyFacilityToForm = (facilityId: string) => {
-    const found = facilities.find((item) => String(item.id) === String(facilityId));
-    setForm((current) => ({
-      ...current,
-      facilityId,
-      facility: found ? found.name : "",
-      location: found ? found.location : "",
-      address: found ? found.address : "",
-      phone: found ? found.phone : "",
-      notes: current.notes || (found ? found.notes : "") || "",
-    }));
-  };
+      const monthStats = Object.entries(groupedMonthStats).map(([month, items]) => ({
+        month,
+        count: items.length,
+        totalHours: items.reduce((acc, item) => acc + getDurationHours(item.start, item.end), 0).toFixed(1),
+        totalCompensation: items.reduce((acc, item) => acc + computeAppointmentAmount(item), 0)
+      }));
 
-  const addAppointment = () => {
-    if (!form.date || !form.facility.trim() || !form.location.trim()) return;
-    const newAppointment = {
-      id: Date.now(),
-      ...form,
-      compensation: form.compensation === "" ? "" : Number(form.compensation) || 0,
-      hourlyRate: form.hourlyRate === "" ? "" : Number(form.hourlyRate) || 0,
-    };
-    setAppointments((current) => [...current, newAppointment].sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`)));
-    setSelectedDate(form.date);
-    setActiveTab("calendar");
-    setForm((current) => ({ ...current, start: "08:00", end: "13:00", notes: "", compensation: "", hourlyRate: "" }));
-  };
+      const calendarWeeks = getMonthMatrix(state.currentMonth);
 
-  const duplicateAppointment = (item: any) => {
-    const nextDate = new Date(`${item.date}T12:00:00`);
-    nextDate.setDate(nextDate.getDate() + 7);
-    const duplicated = { ...item, id: Date.now(), date: nextDate.toISOString().slice(0, 10), notes: item.notes ? `${item.notes} (duplicato)` : "Duplicato rapido" };
-    setAppointments((current) => [...current, duplicated].sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`)));
-  };
+      const labels = {
+        today: "Oggi",
+        calendar: "Calendario",
+        add: "Aggiungi",
+        facilities: "Strutture",
+        summary: "Riepilogo"
+      };
 
-  const deleteAppointment = (id: number | string) => setAppointments((current) => current.filter((item) => item.id !== id));
-
-  const removeFacility = (id: number | string) => {
-    const facility = facilities.find((item) => item.id === id);
-    if (!facility) return;
-    setFacilities((current) => current.filter((item) => item.id !== id));
-    setAppointments((current) => current.filter((item) => item.facility !== facility.name));
-  };
-
-  const toggleChecklist = (id: number) => setChecklist((current) => current.map((item) => item.id === id ? { ...item, done: !item.done } : item));
-  const resetChecklist = () => setChecklist((current) => current.map((item) => ({ ...item, done: false })));
-
-  const exportMonthlySummary = () => {
-    const rows = currentMonthAppointments
-      .sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`))
-      .map((item) => `${formatDateLabel(item.date)} | ${item.facility} | ${getDurationHours(item.start, item.end).toFixed(2)} ore | tariffa ${formatCurrency(item.hourlyRate)} | totale ${formatCurrency(computeAppointmentAmount(item))}`);
-    const summary = [
-      `Planner Elisa - ${currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}`,
-      "",
-      ...rows,
-      "",
-      ...facilityPerformance
-        .filter((facility) => currentMonthAppointments.some((item) => item.facility === facility.name))
-        .map((facility) => `Struttura: ${facility.name} | Ore: ${facility.hours} | Totale: ${formatCurrency(facility.totalCompensation)}`),
-    ].join("\n");
-    const blob = new Blob([summary], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `riepilogo-${formatMonthKey(currentMonth)}.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-slate-100 text-slate-800">
-      <div className="mx-auto max-w-md px-4 pb-32 pt-4 sm:max-w-lg">
-        <header className="sticky top-0 z-30 mb-4 rounded-[1.75rem] bg-white/90 p-4 shadow-sm ring-1 ring-rose-100 backdrop-blur">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">♥ Planner Elisa</div>
-              <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">Agenda iPhone-first</h1>
-              <p className="mt-1 text-sm leading-6 text-slate-600">Semplice, veloce, pensata per essere usata solo da iPhone.</p>
-            </div>
-            <button onClick={() => setActiveTab("add")} className="rounded-2xl bg-slate-900 p-3 text-white shadow-sm" aria-label="Aggiungi impegno">＋</button>
-          </div>
-          <div className="mt-4 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white">✨ {dailyMessages[messageIndex]}</div>
-        </header>
-
-        <MobileSection show={activeTab === "today"}>
-          <div className="space-y-4">
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-rose-50 p-4 ring-1 ring-rose-100"><div className="text-xs text-slate-500">Giornate</div><div className="mt-1 text-2xl font-semibold">{globalStats.days}</div></div>
-                <div className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100"><div className="text-xs text-slate-500">Totale stimato</div><div className="mt-1 text-lg font-semibold">{formatCurrency(globalStats.compensation)}</div></div>
+      app.innerHTML = `
+        <div class="min-h-screen bg-gradient-to-br from-rose-50 via-white to-slate-100 text-slate-800">
+          <div class="mx-auto max-w-md px-4 pb-32 pt-4 sm:max-w-lg">
+            <header class="sticky top-0 z-30 mb-4 rounded-[1.75rem] bg-white/90 p-4 shadow-sm ring-1 ring-rose-100 backdrop-blur">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">♥ Planner Elisa</div>
+                  <h1 class="mt-3 text-2xl font-semibold tracking-tight text-slate-900">Agenda iPhone-first</h1>
+                  <p class="mt-1 text-sm leading-6 text-slate-600">Semplice, veloce, pensata per essere usata solo da iPhone.</p>
+                </div>
+                <button id="go-add" class="rounded-2xl bg-slate-900 p-3 text-white shadow-sm" aria-label="Aggiungi impegno">＋</button>
               </div>
-            </section>
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-3"><span className="text-rose-500">⌂</span><div><h2 className="text-xl font-semibold text-slate-900">Oggi</h2><p className="text-sm capitalize text-slate-500">{formatDateLabel(today)} · {currentTimeLabel}</p></div></div>
-              <div className="mt-4 space-y-3">
-                {todayAppointments.length > 0 ? todayAppointments.map((item) => (
-                  <div key={item.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                    <div className="text-lg font-semibold text-slate-900">{item.facility}</div>
-                    <div className="mt-2 text-sm font-medium text-slate-700">🕒 {item.start} – {item.end}</div>
-                    <div className="mt-1 text-sm text-slate-500">Tariffa oraria: {formatCurrency(item.hourlyRate)}</div>
-                    <div className="mt-1 text-sm text-slate-600">Totale turno: {formatCurrency(computeAppointmentAmount(item))}</div>
-                  </div>
-                )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun impegno programmato per oggi.</div>}
-              </div>
-            </section>
-          </div>
-        </MobileSection>
+              <div class="mt-4 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white">✨ ${dailyMessages[new Date().getDate() % dailyMessages.length]}</div>
+            </header>
 
-        <MobileSection show={activeTab === "calendar"}>
-          <div className="space-y-4">
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-4 flex items-center justify-between gap-2">
-                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="rounded-2xl bg-slate-100 p-3 ring-1 ring-slate-200">‹</button>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium capitalize text-slate-700 ring-1 ring-slate-200">{currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</div>
-                <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="rounded-2xl bg-slate-100 p-3 ring-1 ring-slate-200">›</button>
+            ${state.activeTab === "today" ? `
+            <div class="space-y-4">
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded-2xl bg-rose-50 p-4 ring-1 ring-rose-100"><div class="text-xs text-slate-500">Giornate</div><div class="mt-1 text-2xl font-semibold">${globalStats.days}</div></div>
+                  <div class="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100"><div class="text-xs text-slate-500">Totale stimato</div><div class="mt-1 text-lg font-semibold">${formatCurrency(globalStats.compensation)}</div></div>
+                </div>
+              </section>
+
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="flex items-center gap-3"><span class="text-rose-500">⌂</span><div><h2 class="text-xl font-semibold text-slate-900">Oggi</h2><p class="text-sm capitalize text-slate-500">${formatDateLabel(today)} · ${currentTimeLabel}</p></div></div>
+                <div class="mt-4 space-y-3">
+                  ${todayAppointments.length ? todayAppointments.map(item => `
+                    <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                      <div class="text-lg font-semibold text-slate-900">${item.facility}</div>
+                      <div class="mt-2 text-sm font-medium text-slate-700">🕒 ${item.start} – ${item.end}</div>
+                      <div class="mt-1 text-sm text-slate-500">Tariffa oraria: ${formatCurrency(item.hourlyRate)}</div>
+                      <div class="mt-1 text-sm text-slate-600">Totale turno: ${formatCurrency(computeAppointmentAmount(item))}</div>
+                    </div>
+                  `).join("") : `<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun impegno programmato per oggi.</div>`}
+                </div>
+              </section>
+
+              ${nextAppointment ? `
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-3 flex items-center justify-between gap-3">
+                  <div><h2 class="text-xl font-semibold text-slate-900">Prossimo</h2><p class="text-sm text-slate-500">Il prossimo impegno utile</p></div>
+                  <span class="text-rose-500">🔔</span>
+                </div>
+                <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                  <div class="text-base font-semibold text-slate-900">${nextAppointment.facility}</div>
+                  <div class="mt-1 text-sm capitalize text-slate-500">${formatDateLabel(nextAppointment.date)}</div>
+                  <div class="mt-2 text-sm font-medium text-slate-700">${nextAppointment.start} – ${nextAppointment.end}</div>
+                </div>
+              </section>` : ""}
+
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                  <div><h2 class="text-xl font-semibold text-slate-900">Checklist</h2><p class="text-sm text-slate-500">Prima di uscire</p></div>
+                  <button id="reset-checklist" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200">Reset</button>
+                </div>
+                <div class="space-y-3">
+                  ${state.checklist.map(item => `
+                    <button data-check-id="${item.id}" class="check-item flex w-full items-center gap-3 rounded-2xl p-3 text-left ring-1 transition ${item.done ? "bg-emerald-50 text-emerald-700 ring-emerald-100" : "bg-slate-50 text-slate-700 ring-slate-200"}">
+                      <div class="flex h-5 w-5 items-center justify-center rounded-full border ${item.done ? "border-emerald-400 bg-emerald-500 text-white" : "border-slate-300 bg-white"}">${item.done ? "✓" : ""}</div>
+                      <span class="text-sm font-medium">${item.label}</span>
+                    </button>
+                  `).join("")}
+                </div>
+              </section>
+            </div>` : ""}
+
+            ${state.activeTab === "calendar" ? `
+            <div class="space-y-4">
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4 flex items-center justify-between gap-2">
+                  <button id="prev-month" class="rounded-2xl bg-slate-100 p-3 ring-1 ring-slate-200">‹</button>
+                  <div class="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-medium capitalize text-slate-700 ring-1 ring-slate-200">${state.currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</div>
+                  <button id="next-month" class="rounded-2xl bg-slate-100 p-3 ring-1 ring-slate-200">›</button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase text-slate-500">${["L","M","M","G","V","S","D"].map(day => `<div class="py-1">${day}</div>`).join("")}</div>
+                <div class="mt-2 space-y-1.5">
+                  ${calendarWeeks.map(week => `
+                    <div class="grid grid-cols-7 gap-1.5">
+                      ${week.map(day => {
+                        const dateKey = toLocalDateString(day);
+                        const inMonth = day.getMonth() === state.currentMonth.getMonth();
+                        const dayAppointments = state.appointments.filter(item => item.date === dateKey);
+                        const isSelected = state.selectedDate === dateKey;
+                        const isToday = today === dateKey;
+                        return `
+                          <button data-date="${dateKey}" class="calendar-day min-h-[62px] rounded-2xl px-1.5 py-2 text-center ring-1 transition ${isSelected ? "bg-slate-900 text-white ring-slate-900" : inMonth ? "bg-slate-50 text-slate-700 ring-slate-200" : "bg-white text-slate-300 ring-slate-100"}">
+                            <div class="text-sm font-semibold">${day.getDate()}</div>
+                            <div class="mt-1 flex justify-center gap-1">
+                              ${isToday ? `<span class="h-1.5 w-1.5 rounded-full ${isSelected ? "bg-rose-300" : "bg-rose-500"}"></span>` : ""}
+                              ${dayAppointments.length > 0 ? `<span class="h-1.5 w-1.5 rounded-full ${isSelected ? "bg-white" : "bg-slate-500"}"></span>` : ""}
+                            </div>
+                          </button>`;
+                      }).join("")}
+                    </div>
+                  `).join("")}
+                </div>
+              </section>
+
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-3"><h2 class="text-xl font-semibold text-slate-900">Giorno selezionato</h2><p class="text-sm capitalize text-slate-500">${formatDateLabel(state.selectedDate)}</p></div>
+                <div class="space-y-3">
+                  ${selectedDayAppointments.length ? selectedDayAppointments.map(item => {
+                    const facilityColor = (state.facilities.find(f => f.name === item.facility) || {}).color || "slate";
+                    return `
+                      <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                        <div class="flex items-center justify-between gap-2">
+                          <div class="rounded-full px-3 py-1 text-xs font-medium ring-1 ${colorStyles[facilityColor]}">${item.facility}</div>
+                          <button data-delete-id="${item.id}" class="delete-appointment rounded-xl p-2 text-slate-400">🗑</button>
+                        </div>
+                        <div class="mt-3 text-sm font-medium text-slate-800">${item.start} – ${item.end} · ${formatDuration(item.start, item.end)}</div>
+                        <div class="mt-1 text-sm text-slate-500">Tariffa oraria: ${formatCurrency(item.hourlyRate)}</div>
+                        <div class="mt-1 text-sm text-slate-500">Totale turno: ${formatCurrency(computeAppointmentAmount(item))}</div>
+                      </div>`;
+                  }).join("") : `<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun incarico su questa data.</div>`}
+                </div>
+              </section>
+            </div>` : ""}
+
+            ${state.activeTab === "add" ? `
+            <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+              <div class="mb-4"><h2 class="text-xl font-semibold text-slate-900">Aggiungi impegno</h2><p class="text-sm text-slate-500">Ora puoi inserire anche la tariffa oraria.</p></div>
+              <div class="space-y-3">
+                <input id="form-date" type="date" value="${state.form.date}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                <select id="form-facility-id" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none">
+                  <option value="">Seleziona struttura</option>
+                  ${state.facilities.map(f => `<option value="${f.id}" ${String(state.form.facilityId) === String(f.id) ? "selected" : ""}>${f.name}</option>`).join("")}
+                </select>
+                <input id="form-facility" value="${escapeHtml(state.form.facility)}" placeholder="Nome struttura" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                <input id="form-location" value="${escapeHtml(state.form.location)}" placeholder="Zona" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                <div class="grid grid-cols-2 gap-3">
+                  <input id="form-start" type="time" value="${state.form.start}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                  <input id="form-end" type="time" value="${state.form.end}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <input id="form-hourly-rate" type="number" step="0.01" value="${state.form.hourlyRate}" placeholder="Tariffa oraria" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                  <input id="form-compensation" type="number" step="0.01" value="${state.form.compensation}" placeholder="Compenso fisso" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                </div>
+                <div class="text-xs text-slate-500">Se inserisci il compenso fisso, quello ha priorità. Se lo lasci vuoto, l'app calcola automaticamente ore × tariffa oraria.</div>
+                <textarea id="form-notes" placeholder="Note utili" rows="4" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none">${escapeHtml(state.form.notes)}</textarea>
+                <button id="save-appointment" class="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">Salva impegno</button>
               </div>
-              <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase text-slate-500">{["L","M","M","G","V","S","D"].map((day, i) => <div key={`${day}-${i}`} className="py-1">{day}</div>)}</div>
-              <div className="mt-2 space-y-1.5">
-                {calendarWeeks.map((week, index) => (
-                  <div key={index} className="grid grid-cols-7 gap-1.5">
-                    {week.map((day) => {
-                      const dateKey = toLocalDateString(day);
-                      const inMonth = day.getMonth() === currentMonth.getMonth();
-                      const dayAppointments = appointments.filter((item) => item.date === dateKey);
-                      const isSelected = selectedDate === dateKey;
-                      const isToday = today === dateKey;
-                      return (
-                        <button key={dateKey} onClick={() => setSelectedDate(dateKey)} className={`min-h-[62px] rounded-2xl px-1.5 py-2 text-center ring-1 transition ${isSelected ? "bg-slate-900 text-white ring-slate-900" : inMonth ? "bg-slate-50 text-slate-700 ring-slate-200" : "bg-white text-slate-300 ring-slate-100"}`}>
-                          <div className="text-sm font-semibold">{day.getDate()}</div>
-                          <div className="mt-1 flex justify-center gap-1">
-                            {isToday ? <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-rose-300" : "bg-rose-500"}`} /> : null}
-                            {dayAppointments.length > 0 ? <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-white" : "bg-slate-500"}`} /> : null}
+            </section>` : ""}
+
+            ${state.activeTab === "facilities" ? `
+            <div class="space-y-4">
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4"><h2 class="text-xl font-semibold text-slate-900">Strutture</h2><p class="text-sm text-slate-500">Con riepilogo ore e totale per fattura.</p></div>
+                <div class="space-y-3">
+                  ${facilityPerformance.length ? facilityPerformance.map(facility => `
+                    <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-2">
+                            <div class="truncate text-base font-semibold text-slate-900">${facility.name}</div>
+                            <div class="rounded-full px-2 py-1 text-[11px] font-medium ring-1 ${colorStyles[facility.color] || colorStyles.slate}">${facility.location || "Zona"}</div>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-3"><h2 className="text-xl font-semibold text-slate-900">Giorno selezionato</h2><p className="text-sm capitalize text-slate-500">{formatDateLabel(selectedDate)}</p></div>
-              <div className="space-y-3">
-                {selectedDayAppointments.length > 0 ? selectedDayAppointments.map((item) => {
-                  const facilityColor = (facilities.find((f) => f.name === item.facility) || {}).color || "slate";
-                  return (
-                    <div key={item.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                      <div className="flex items-center justify-between gap-2"><div className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${colorStyles[facilityColor]}`}>{item.facility}</div><button onClick={() => deleteAppointment(item.id)} className="rounded-xl p-2 text-slate-400">🗑</button></div>
-                      <div className="mt-3 text-sm font-medium text-slate-800">{item.start} – {item.end} · {formatDuration(item.start, item.end)}</div>
-                      <div className="mt-1 text-sm text-slate-500">Tariffa oraria: {formatCurrency(item.hourlyRate)}</div>
-                      <div className="mt-1 text-sm text-slate-500">Totale turno: {formatCurrency(computeAppointmentAmount(item))}</div>
-                    </div>
-                  );
-                }) : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun incarico su questa data.</div>}
-              </div>
-            </section>
-          </div>
-        </MobileSection>
-
-        <MobileSection show={activeTab === "add"}>
-          <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-4"><h2 className="text-xl font-semibold text-slate-900">Aggiungi impegno</h2><p className="text-sm text-slate-500">Ora puoi inserire anche la tariffa oraria.</p></div>
-            <div className="space-y-3">
-              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              <select value={form.facilityId} onChange={(e) => applyFacilityToForm(e.target.value)} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none">
-                <option value="">Seleziona struttura</option>
-                {facilities.map((facility) => <option key={facility.id} value={facility.id}>{facility.name}</option>)}
-              </select>
-              <input value={form.facility} onChange={(e) => setForm({ ...form, facility: e.target.value })} placeholder="Nome struttura" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Zona" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              <div className="grid grid-cols-2 gap-3">
-                <input type="time" value={form.start} onChange={(e) => setForm({ ...form, start: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-                <input type="time" value={form.end} onChange={(e) => setForm({ ...form, end: e.target.value })} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <input type="number" step="0.01" value={form.hourlyRate} onChange={(e) => setForm({ ...form, hourlyRate: e.target.value })} placeholder="Tariffa oraria" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-                <input type="number" step="0.01" value={form.compensation} onChange={(e) => setForm({ ...form, compensation: e.target.value })} placeholder="Compenso fisso" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              </div>
-              <div className="text-xs text-slate-500">Se inserisci il compenso fisso, quello ha priorità. Se lo lasci vuoto, l'app calcola automaticamente ore × tariffa oraria.</div>
-              <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Note utili" rows={4} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-              <button onClick={addAppointment} className="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">Salva impegno</button>
-            </div>
-          </section>
-        </MobileSection>
-
-        <MobileSection show={activeTab === "facilities"}>
-          <div className="space-y-4">
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-4"><h2 className="text-xl font-semibold text-slate-900">Strutture</h2><p className="text-sm text-slate-500">Con riepilogo ore e totale per fattura.</p></div>
-              <div className="space-y-3">
-                {facilityPerformance.length > 0 ? facilityPerformance.map((facility) => (
-                  <div key={facility.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2"><div className="truncate text-base font-semibold text-slate-900">{facility.name}</div><div className={`rounded-full px-2 py-1 text-[11px] font-medium ring-1 ${colorStyles[facility.color] || colorStyles.slate}`}>{facility.location || "Zona"}</div></div>
-                        <div className="mt-2 text-sm text-slate-700">Ore totali: <strong>{facility.hours}</strong></div>
-                        <div className="mt-1 text-sm text-slate-700">Incarichi: <strong>{facility.count}</strong></div>
-                        <div className="mt-1 text-sm text-slate-700">Totale da fatturare: <strong>{formatCurrency(facility.totalCompensation)}</strong></div>
-                        <div className="mt-1 text-sm text-slate-500">Tariffa oraria media: {facility.avgHourlyRate ? formatCurrency(facility.avgHourlyRate) : "—"}</div>
+                          <div class="mt-2 text-sm text-slate-700">Ore totali: <strong>${facility.hours}</strong></div>
+                          <div class="mt-1 text-sm text-slate-700">Incarichi: <strong>${facility.count}</strong></div>
+                          <div class="mt-1 text-sm text-slate-700">Totale da fatturare: <strong>${formatCurrency(facility.totalCompensation)}</strong></div>
+                          <div class="mt-1 text-sm text-slate-500">Tariffa oraria media: ${facility.avgHourlyRate ? formatCurrency(facility.avgHourlyRate) : "—"}</div>
+                        </div>
+                        ${typeof facility.id === "number" ? `<button data-remove-facility="${facility.id}" class="remove-facility rounded-xl p-2 text-slate-400">✕</button>` : ""}
                       </div>
-                      {typeof facility.id === "number" ? <button onClick={() => removeFacility(facility.id)} className="rounded-xl p-2 text-slate-400">✕</button> : null}
                     </div>
-                  </div>
-                )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessuna struttura salvata.</div>}
-              </div>
-            </section>
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-4"><h2 className="text-xl font-semibold text-slate-900">Nuova struttura</h2></div>
-              <div className="space-y-3">
-                <input value={facilityForm.name} onChange={(e) => setFacilityForm({ ...facilityForm, name: e.target.value })} placeholder="Nome struttura" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-                <input value={facilityForm.location} onChange={(e) => setFacilityForm({ ...facilityForm, location: e.target.value })} placeholder="Zona" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-                <input value={facilityForm.address} onChange={(e) => setFacilityForm({ ...facilityForm, address: e.target.value })} placeholder="Indirizzo" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
-                <button onClick={addFacility} className="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">Salva struttura</button>
-              </div>
-            </section>
-          </div>
-        </MobileSection>
+                  `).join("") : `<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessuna struttura salvata.</div>`}
+                </div>
+              </section>
 
-        <MobileSection show={activeTab === "summary"}>
-          <div className="space-y-4">
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-xl font-semibold text-slate-900">Riepilogo mese</h2><p className="text-sm capitalize text-slate-500">{currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</p></div><button onClick={exportMonthlySummary} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200">Esporta</button></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><div className="text-xs text-slate-500">Incarichi</div><div className="mt-1 text-2xl font-semibold">{currentMonthAppointments.length}</div></div>
-                <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><div className="text-xs text-slate-500">Ore</div><div className="mt-1 text-2xl font-semibold">{currentMonthAppointments.reduce((acc, item) => acc + getDurationHours(item.start, item.end), 0).toFixed(1)}</div></div>
-                <div className="col-span-2 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100"><div className="text-xs text-slate-500">Totale da fatturare</div><div className="mt-1 text-2xl font-semibold">{formatCurrency(currentMonthAppointments.reduce((acc, item) => acc + computeAppointmentAmount(item), 0))}</div></div>
-              </div>
-            </section>
-            <section className="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <div className="mb-4"><h2 className="text-xl font-semibold text-slate-900">Recap per struttura</h2></div>
-              <div className="space-y-3">
-                {facilityPerformance.length > 0 ? facilityPerformance.map((facility) => (
-                  <div key={facility.id} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-                    <div className="text-base font-semibold text-slate-900">{facility.name}</div>
-                    <div className="mt-2 text-sm text-slate-700">Ore totali: <strong>{facility.hours}</strong></div>
-                    <div className="mt-1 text-sm text-slate-700">Totale da fatturare: <strong>{formatCurrency(facility.totalCompensation)}</strong></div>
-                  </div>
-                )) : <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun dato disponibile.</div>}
-              </div>
-            </section>
-          </div>
-        </MobileSection>
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4"><h2 class="text-xl font-semibold text-slate-900">Nuova struttura</h2></div>
+                <div class="space-y-3">
+                  <input id="facility-name" value="${escapeHtml(state.facilityForm.name)}" placeholder="Nome struttura" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                  <input id="facility-location" value="${escapeHtml(state.facilityForm.location)}" placeholder="Zona" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                  <input id="facility-address" value="${escapeHtml(state.facilityForm.address)}" placeholder="Indirizzo" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-base outline-none" />
+                  <button id="save-facility" class="w-full rounded-2xl bg-slate-900 px-5 py-4 text-base font-medium text-white">Salva struttura</button>
+                </div>
+              </section>
+            </div>` : ""}
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 backdrop-blur">
-          <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
-            {tabs.map((tab) => {
-              const active = activeTab === tab;
-              const labels: Record<string, string> = { today: "Oggi", calendar: "Calendario", add: "Aggiungi", facilities: "Strutture", summary: "Riepilogo" };
-              return (
-                <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-3 text-[11px] font-medium transition ${active ? "bg-slate-900 text-white" : "text-slate-500"}`}>
-                  <span>{tab === "today" ? "⌂" : tab === "calendar" ? "📅" : tab === "add" ? "＋" : tab === "facilities" ? "🏥" : "📄"}</span>
-                  <span>{labels[tab]}</span>
-                </button>
-              );
-            })}
+            ${state.activeTab === "summary" ? `
+            <div class="space-y-4">
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4 flex items-center justify-between gap-3">
+                  <div><h2 class="text-xl font-semibold text-slate-900">Riepilogo mese</h2><p class="text-sm capitalize text-slate-500">${state.currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</p></div>
+                  <button id="export-summary" class="rounded-xl bg-slate-100 px-3 py-2 text-xs font-medium text-slate-700 ring-1 ring-slate-200">Esporta</button>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><div class="text-xs text-slate-500">Incarichi</div><div class="mt-1 text-2xl font-semibold">${currentMonthAppointments.length}</div></div>
+                  <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200"><div class="text-xs text-slate-500">Ore</div><div class="mt-1 text-2xl font-semibold">${currentMonthAppointments.reduce((acc, item) => acc + getDurationHours(item.start, item.end), 0).toFixed(1)}</div></div>
+                  <div class="col-span-2 rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-100"><div class="text-xs text-slate-500">Totale da fatturare</div><div class="mt-1 text-2xl font-semibold">${formatCurrency(currentMonthAppointments.reduce((acc, item) => acc + computeAppointmentAmount(item), 0))}</div></div>
+                </div>
+              </section>
+
+              <section class="rounded-[1.75rem] bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                <div class="mb-4"><h2 class="text-xl font-semibold text-slate-900">Recap per struttura</h2></div>
+                <div class="space-y-3">
+                  ${facilityPerformance.length ? facilityPerformance.map(facility => `
+                    <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                      <div class="text-base font-semibold text-slate-900">${facility.name}</div>
+                      <div class="mt-2 text-sm text-slate-700">Ore totali: <strong>${facility.hours}</strong></div>
+                      <div class="mt-1 text-sm text-slate-700">Totale da fatturare: <strong>${formatCurrency(facility.totalCompensation)}</strong></div>
+                    </div>
+                  `).join("") : `<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">Nessun dato disponibile.</div>`}
+                </div>
+              </section>
+            </div>` : ""}
+
+            <nav class="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)] pt-2 backdrop-blur">
+              <div class="mx-auto grid max-w-md grid-cols-5 gap-1">
+                ${tabs.map(tab => `
+                  <button data-tab="${tab}" class="tab-btn flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-3 text-[11px] font-medium transition ${state.activeTab === tab ? "bg-slate-900 text-white" : "text-slate-500"}">
+                    <span>${tab === "today" ? "⌂" : tab === "calendar" ? "📅" : tab === "add" ? "＋" : tab === "facilities" ? "🏥" : "📄"}</span>
+                    <span>${labels[tab]}</span>
+                  </button>
+                `).join("")}
+              </div>
+            </nav>
           </div>
-        </nav>
-      </div>
-    </div>
-  );
-}
+        </div>
+      `;
+
+      bindEvents();
+    }
+
+    function bindEvents() {
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.onclick = () => {
+          state.activeTab = btn.dataset.tab;
+          render();
+        };
+      });
+
+      const goAdd = document.getElementById("go-add");
+      if (goAdd) goAdd.onclick = () => {
+        state.activeTab = "add";
+        render();
+      };
+
+      const prevMonth = document.getElementById("prev-month");
+      if (prevMonth) prevMonth.onclick = () => {
+        state.currentMonth = new Date(state.currentMonth.getFullYear(), state.currentMonth.getMonth() - 1, 1);
+        render();
+      };
+
+      const nextMonth = document.getElementById("next-month");
+      if (nextMonth) nextMonth.onclick = () => {
+        state.currentMonth = new Date(state.currentMonth.getFullYear(), state.currentMonth.getMonth() + 1, 1);
+        render();
+      };
+
+      document.querySelectorAll(".calendar-day").forEach(btn => {
+        btn.onclick = () => {
+          state.selectedDate = btn.dataset.date;
+          render();
+        };
+      });
+
+      document.querySelectorAll(".delete-appointment").forEach(btn => {
+        btn.onclick = () => {
+          const id = Number(btn.dataset.deleteId);
+          state.appointments = state.appointments.filter(item => item.id !== id);
+          saveState();
+          render();
+        };
+      });
+
+      document.querySelectorAll(".remove-facility").forEach(btn => {
+        btn.onclick = () => {
+          const id = Number(btn.dataset.removeFacility);
+          const facility = state.facilities.find(item => item.id === id);
+          if (!facility) return;
+          state.facilities = state.facilities.filter(item => item.id !== id);
+          state.appointments = state.appointments.filter(item => item.facility !== facility.name);
+          saveState();
+          render();
+        };
+      });
+
+      document.querySelectorAll(".check-item").forEach(btn => {
+        btn.onclick = () => {
+          const id = Number(btn.dataset.checkId);
+          state.checklist = state.checklist.map(item => item.id === id ? { ...item, done: !item.done } : item);
+          saveState();
+          render();
+        };
+      });
+
+      const resetChecklist = document.getElementById("reset-checklist");
+      if (resetChecklist) resetChecklist.onclick = () => {
+        state.checklist = state.checklist.map(item => ({ ...item, done: false }));
+        saveState();
+        render();
+      };
+
+      const exportSummary = document.getElementById("export-summary");
+      if (exportSummary) exportSummary.onclick = () => {
+        const facilityPerformance = getFacilityPerformance();
+        const currentMonthAppointments = getCurrentMonthAppointments();
+        const rows = currentMonthAppointments
+          .sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`))
+          .map(item => `${formatDateLabel(item.date)} | ${item.facility} | ${getDurationHours(item.start, item.end).toFixed(2)} ore | tariffa ${formatCurrency(item.hourlyRate)} | totale ${formatCurrency(computeAppointmentAmount(item))}`);
+        const summary = [
+          `Planner Elisa - ${state.currentMonth.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}`,
+          "",
+          ...rows,
+          "",
+          ...facilityPerformance
+            .filter(facility => currentMonthAppointments.some(item => item.facility === facility.name))
+            .map(facility => `Struttura: ${facility.name} | Ore: ${facility.hours} | Totale: ${formatCurrency(facility.totalCompensation)}`)
+        ].join("\n");
+        const blob = new Blob([summary], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `riepilogo-${formatMonthKey(state.currentMonth)}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      };
+
+      if (state.activeTab === "add") {
+        const fields = [
+          ["form-date", "date"],
+          ["form-facility", "facility"],
+          ["form-location", "location"],
+          ["form-start", "start"],
+          ["form-end", "end"],
+          ["form-hourly-rate", "hourlyRate"],
+          ["form-compensation", "compensation"],
+          ["form-notes", "notes"]
+        ];
+
+        fields.forEach(([id, key]) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.oninput = (e) => {
+              state.form[key] = e.target.value;
+            };
+          }
+        });
+
+        const facilitySelect = document.getElementById("form-facility-id");
+        if (facilitySelect) {
+          facilitySelect.onchange = (e) => {
+            const facilityId = e.target.value;
+            state.form.facilityId = facilityId;
+            const found = state.facilities.find(item => String(item.id) === String(facilityId));
+            state.form.facility = found ? found.name : "";
+            state.form.location = found ? found.location : "";
+            state.form.address = found ? found.address : "";
+            state.form.phone = found ? found.phone : "";
+            state.form.notes = state.form.notes || (found ? found.notes : "") || "";
+            render();
+          };
+        }
+
+        const saveAppointment = document.getElementById("save-appointment");
+        if (saveAppointment) {
+          saveAppointment.onclick = () => {
+            if (!state.form.date || !state.form.facility.trim() || !state.form.location.trim()) {
+              alert("Inserisci almeno data, struttura e zona.");
+              return;
+            }
+            const newAppointment = {
+              id: Date.now(),
+              ...state.form,
+              compensation: state.form.compensation === "" ? "" : Number(state.form.compensation) || 0,
+              hourlyRate: state.form.hourlyRate === "" ? "" : Number(state.form.hourlyRate) || 0
+            };
+            state.appointments.push(newAppointment);
+            state.appointments.sort((a, b) => `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`));
+            state.selectedDate = state.form.date;
+            state.activeTab = "calendar";
+            state.form.start = "08:00";
+            state.form.end = "13:00";
+            state.form.notes = "";
+            state.form.compensation = "";
+            state.form.hourlyRate = "";
+            saveState();
+            render();
+          };
+        }
+      }
+
+      if (state.activeTab === "facilities") {
+        const facilityFields = [
+          ["facility-name", "name"],
+          ["facility-location", "location"],
+          ["facility-address", "address"]
+        ];
+
+        facilityFields.forEach(([id, key]) => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.oninput = (e) => {
+              state.facilityForm[key] = e.target.value;
+            };
+          }
+        });
+
+        const saveFacility = document.getElementById("save-facility");
+        if (saveFacility) {
+          saveFacility.onclick = () => {
+            if (!state.facilityForm.name.trim() || !state.facilityForm.address.trim()) {
+              alert("Inserisci almeno nome struttura e indirizzo.");
+              return;
+            }
+            const newFacility = { id: Date.now(), ...state.facilityForm };
+            state.facilities.push(newFacility);
+            state.form.facilityId = String(newFacility.id);
+            state.form.facility = newFacility.name;
+            state.form.location = newFacility.location;
+            state.form.address = newFacility.address;
+            state.form.phone = newFacility.phone;
+            state.facilityForm = {
+              name: "",
+              location: "",
+              address: "",
+              phone: "",
+              contactPerson: "",
+              averageTravelTime: "",
+              color: "rose",
+              notes: ""
+            };
+            saveState();
+            render();
+          };
+        }
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    render();
+    setInterval(render, 60000);
+  </script>
+</body>
+</html>
